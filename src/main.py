@@ -1,7 +1,7 @@
 import asyncio
 import click
 from bleak import BleakClient, BleakScanner
-from bleak.exc import BleakDBusError
+from bleak.exc import BleakDBusError, BleakDeviceNotFoundError
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 import logging
 import sys
@@ -176,8 +176,6 @@ def render_text_to_image(text_content, width, height, default_font_path, default
         font_path = props.get('font', default_font_path)
         color = props.get('color', default_color)
         align = props.get('align', 'left')
-        
-        logger.info(f"Rendering line: '{text}' with props: {props} -> (size: {font_size}, color: {color}, align: {align})")
 
         # Load font, caching to avoid reloading
         font_key = (font_path, font_size)
@@ -287,11 +285,21 @@ async def main_logic(address, adapter, image_path, text, font, size, color, widt
                 else: # stretch
                     img = img.resize((final_width, final_height))
 
-            if dither_algo != 'none':
-                logger.info(f"Applying {dither_algo} dithering...")
+            # Decide on dithering
+            final_dither_algo = dither_algo
+            if final_dither_algo == 'auto':
+                if image_path:
+                    final_dither_algo = 'floyd'
+                    logger.info("Auto-selecting 'floyd' dithering for image.")
+                else: # text
+                    final_dither_algo = 'none'
+                    logger.info("Auto-disabling dithering for text.")
+
+            if final_dither_algo != 'none':
+                logger.info(f"Applying {final_dither_algo} dithering...")
                 palette = THREE_COLOR_PALETTE if color_mode == 'bwr' else TWO_COLOR_PALETTE
-                dither_func = bayer_dither if dither_algo == 'bayer' else dither
-                img = dither_func(img, palette, dither_algo) if dither_algo != 'bayer' else dither_func(img, palette)
+                dither_func = bayer_dither if final_dither_algo == 'bayer' else dither
+                img = dither_func(img, palette, final_dither_algo) if final_dither_algo != 'bayer' else dither_func(img, palette)
 
             # --- Data Transfer ---
             if clear:
@@ -310,7 +318,7 @@ async def main_logic(address, adapter, image_path, text, font, size, color, widt
             logger.info("🎉 Successfully sent image to device.")
             break # Exit retry loop on success
 
-        except (BleakDBusError, asyncio.TimeoutError) as e:
+        except (BleakDBusError, asyncio.TimeoutError, BleakDeviceNotFoundError) as e:
             logger.error(f"An error occurred: {e}")
             if attempt > 0:
                 backoff_delay = 16 ** (retry - attempt + 1)
@@ -351,7 +359,7 @@ def scan(adapter):
 @click.option('--height', type=int)
 @click.option('--clear', is_flag=True)
 @click.option('--color-mode', type=click.Choice(['bw', 'bwr']), default='bw')
-@click.option('--dither', 'dither_algo', type=click.Choice(['none', 'floyd', 'atkinson', 'jarvis', 'stucki', 'bayer']), default='floyd')
+@click.option('--dither', 'dither_algo', type=click.Choice(['auto', 'none', 'floyd', 'atkinson', 'jarvis', 'stucki', 'bayer']), default='auto', help="Dithering algorithm. 'auto' enables for images, disables for text.")
 @click.option('--resize-mode', type=click.Choice(['stretch', 'fit', 'crop']), default='stretch')
 @click.option('--interleaved-count', default=31, type=int, help='Number of chunks to send before waiting for a response.')
 @click.option('--retry', default=3, type=int, help='Max number of retry attempts on connection failure.')
