@@ -35,25 +35,16 @@ To find the address of your EPD, run the `scan` command. Use `--adapter` if you 
 python epd_ble_sender/main.py scan --adapter hci0
 ```
 
-### Send an Image
+### Send an Image or Text
 
-For a standard black and white screen:
-```bash
-python epd_ble_sender/main.py send --address <YOUR_DEVICE_ADDRESS> --adapter hci0 --image /path/to/your/image.png --color-mode bw
-```
+The script will now **auto-detect the screen resolution** from the device upon connection. You no longer need to specify `--width` and `--height` unless you want to override the detected values.
 
-For a **black/white/red** three-color screen, use the `--color-mode bwr` option. The script uses Floyd-Steinberg dithering by default.
+**Example for a three-color screen (e.g., 4.2-inch):**
 ```bash
 python epd_ble_sender/main.py send --address <YOUR_DEVICE_ADDRESS> --adapter hci0 --image /path/to/your/image.png --color-mode bwr
 ```
 
-To send without dithering:
-```bash
-python epd_ble_sender/main.py send --address <YOUR_DEVICE_ADDRESS> --adapter hci0 --image /path/to/your/image.png --color-mode bwr --dither none
-```
-
-### Send Text
-
+**Example sending red text:**
 ```bash
 python epd_ble_sender/main.py send --address <YOUR_DEVICE_ADDRESS> --adapter hci0 --text "Hello World\nIn Red" --color red --color-mode bwr
 ```
@@ -67,8 +58,7 @@ python epd_ble_sender/main.py send --address <YOUR_DEVICE_ADDRESS> --adapter hci
 *   `--font`: Path to a TrueType font file.
 *   `--size`: Font size.
 *   `--color`: Text color (e.g., `black`, `red`).
-*   `--width`: The width of the EPD screen in pixels.
-*   `--height`: The height of the EPD screen in pixels.
+*   `--width`, `--height`: (Optional) Override auto-detected screen resolution.
 *   `--clear`: A flag to clear the screen before sending new content.
 *   `--color-mode`: `bw` for black/white, `bwr` for black/white/red.
 *   `--dither`: Dithering algorithm to use. `floyd` (default) or `none`.
