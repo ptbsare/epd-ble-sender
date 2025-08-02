@@ -165,7 +165,10 @@ def render_text_to_image(text_content, width, height, default_font_path, default
     
     cached_fonts = {}
 
-    for line in text_content.splitlines():
+    # Replace literal '\n' with actual newline characters before splitting
+    processed_text = text_content.replace('\\n', '\n')
+
+    for line in processed_text.splitlines():
         props, text = parse_line_markup(line)
 
         # Determine properties for the current line
