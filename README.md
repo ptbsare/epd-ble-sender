@@ -26,33 +26,45 @@ Activate the virtual environment first:
 source .venv/bin/activate
 ```
 
-The tool provides two main commands: `scan` and `send`.
+The script will **auto-detect the screen resolution** from the device. You can override this with `--width` and `--height`.
 
-### Scan for Devices
+### Basic Example
 
-To find the address of your EPD, run the `scan` command. Use `--adapter` if you have multiple Bluetooth adapters.
 ```bash
+# Scan for your device's address first
 python epd_ble_sender/main.py scan --adapter hci0
+
+# Send an image to a three-color screen
+python epd_ble_sender/main.py send --address <YOUR_DEVICE_ADDRESS> --adapter hci0 --image /path/to/image.png --color-mode bwr
 ```
 
-### Send an Image or Text
+### Advanced Image Handling
 
-The script will now **auto-detect the screen resolution** from the device upon connection. You no longer need to specify `--width` and `--height` unless you want to override the detected values.
+**Resize Modes (`--resize-mode`):**
+- `stretch` (default): Stretches the image to fit the screen, ignoring aspect ratio.
+- `fit`: Resizes the image to fit within the screen while maintaining aspect ratio, padding with white.
+- `crop`: Resizes the image to fill the screen while maintaining aspect ratio, cropping any excess.
 
-**Example for a three-color screen (e.g., 4.2-inch):**
 ```bash
-python epd_ble_sender/main.py send --address <YOUR_DEVICE_ADDRESS> --adapter hci0 --image /path/to/your/image.png --color-mode bwr
+# Crop a large image to fit the screen perfectly
+python epd_ble_sender/main.py send --address <ADDR> --adapter hci0 --image /path/to/large.jpg --color-mode bwr --resize-mode crop
 ```
 
-**Example sending red text:**
+**Dithering Algorithms (`--dither`):**
+- `floyd` (default): Floyd-Steinberg dithering.
+- `atkinson`, `jarvis`, `stucki`: Other error-diffusion algorithms.
+- `bayer`: Ordered dithering.
+- `none`: No dithering.
+
 ```bash
-python epd_ble_sender/main.py send --address <YOUR_DEVICE_ADDRESS> --adapter hci0 --text "Hello World\nIn Red" --color red --color-mode bwr
+# Send an image using Atkinson dithering
+python epd_ble_sender/main.py send --address <ADDR> --adapter hci0 --image /path/to/photo.jpg --color-mode bwr --dither atkinson
 ```
 
 ### All Options
 
 *   `--address`: (Required) The BLE address of your EPD.
-*   `--adapter`: The Bluetooth adapter to use, e.g., `hci0`. Highly recommended.
+*   `--adapter`: The Bluetooth adapter to use, e.g., `hci0`.
 *   `--image`: Path to the image file.
 *   `--text`: Text to display. Use `\n` for new lines.
 *   `--font`: Path to a TrueType font file.
@@ -61,4 +73,5 @@ python epd_ble_sender/main.py send --address <YOUR_DEVICE_ADDRESS> --adapter hci
 *   `--width`, `--height`: (Optional) Override auto-detected screen resolution.
 *   `--clear`: A flag to clear the screen before sending new content.
 *   `--color-mode`: `bw` for black/white, `bwr` for black/white/red.
-*   `--dither`: Dithering algorithm to use. `floyd` (default) or `none`.
+*   `--dither`: `none`, `floyd`, `atkinson`, `jarvis`, `stucki`, `bayer`.
+*   `--resize-mode`: `stretch`, `fit`, `crop`.

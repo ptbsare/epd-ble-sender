@@ -1,7 +1,7 @@
 import asyncio
 import click
 from bleak import BleakClient, BleakScanner
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 import logging
 import sys
 import numpy as np
@@ -10,16 +10,9 @@ import numpy as np
 SERVICE_UUID = "62750001-d828-918d-fb46-b6c11c675aec"
 CHARACTERISTIC_UUID = "62750002-d828-918d-fb46-b6c11c675aec"
 
-# Based on canvasSizes array and common e-paper drivers
-# This is a crucial mapping that was missing.
 DRIVER_TO_RESOLUTION = {
-    # Guessed values based on common drivers and main.js list
-    0x00: (296, 128), # 2.9"
-    0x01: (250, 122), # 2.13"
-    0x02: (400, 300), # 4.2" b/w
-    0x03: (400, 300), # 4.2" b/w/r
-    0x04: (800, 480), # 7.5" b/w/r
-    # Add other mappings as needed
+    0x00: (296, 128), 0x01: (250, 122), 0x02: (400, 300), 
+    0x03: (400, 300), 0x04: (800, 480),
 }
 
 # Palettes
@@ -27,29 +20,81 @@ THREE_COLOR_PALETTE = np.array([[0, 0, 0], [255, 255, 255], [255, 0, 0]])
 TWO_COLOR_PALETTE = np.array([[0, 0, 0], [255, 255, 255]])
 
 class EpdCmd:
-    INIT = 0x01
-    CLEAR = 0x02
-    REFRESH = 0x05
-    WRITE_IMG = 0x30
+    INIT = 0x01; CLEAR = 0x02; REFRESH = 0x05; WRITE_IMG = 0x30
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
-def floyd_steinberg_dither(image: Image.Image, palette: np.ndarray):
+# --- Dithering Algorithms ---
+
+def find_closest_color(pixel, palette):
+    return palette[np.argmin(np.sqrt(np.sum((palette - pixel)**2, axis=1)))]
+
+def apply_error_diffusion(img_array, error_matrix, quant_error):
+    height, width, _ = img_array.shape
+    matrix_h, matrix_w = len(error_matrix), len(error_matrix[0])
+    center_x = matrix_w // 2
+    
+    for my in range(matrix_h):
+        for mx in range(matrix_w):
+            if error_matrix[my][mx] == 0: continue
+            
+            x = int(img_array.shape[1] + mx - center_x)
+            y = int(img_array.shape[0] + my)
+
+            if 0 <= x < width and 0 <= y < height:
+                img_array[y, x] += quant_error * error_matrix[my][mx]
+
+def dither(image: Image.Image, palette: np.ndarray, algorithm: str):
     img_array = np.array(image.convert('RGB'), dtype=np.float32)
     height, width, _ = img_array.shape
+
+    matrices = {
+        'floyd': ([[0, 0, 7], [3, 5, 1]], 16),
+        'jarvis': ([[0,0,0,7,5],[3,5,7,5,3],[1,3,5,3,1]], 48),
+        'stucki': ([[0,0,0,8,4],[2,4,8,4,2],[1,2,4,2,1]], 42),
+        'atkinson': ([[0,0,1,1],[1,1,1,0],[0,1,0,0]], 8)
+    }
+    
+    matrix, divisor = matrices[algorithm]
+    matrix_h, matrix_w = len(matrix), len(matrix[0])
+    center_x = matrix_w // 2
+
     for y in range(height):
         for x in range(width):
             old_pixel = img_array[y, x].copy()
-            new_pixel = palette[np.argmin(np.sqrt(np.sum((palette - old_pixel)**2, axis=1)))]
+            new_pixel = find_closest_color(old_pixel, palette)
             img_array[y, x] = new_pixel
             quant_error = old_pixel - new_pixel
-            if x + 1 < width: img_array[y, x + 1] += quant_error * 7 / 16
-            if y + 1 < height:
-                if x > 0: img_array[y + 1, x - 1] += quant_error * 3 / 16
-                img_array[y + 1, x] += quant_error * 5 / 16
-                if x + 1 < width: img_array[y + 1, x + 1] += quant_error * 1 / 16
-    return Image.fromarray(np.uint8(img_array))
+
+            for my in range(matrix_h):
+                for mx in range(matrix_w):
+                    if matrix[my][mx] == 0: continue
+                    px, py = x + mx - center_x, y + my
+                    if 0 <= px < width and 0 <= py < height:
+                        img_array[py, px] += quant_error * matrix[my][mx] / divisor
+    
+    return Image.fromarray(np.clip(img_array, 0, 255).astype(np.uint8))
+
+def bayer_dither(image: Image.Image, palette: np.ndarray):
+    bayer_matrix = np.array([
+        [ 0, 32,  8, 40,  2, 34, 10, 42], [48, 16, 56, 24, 50, 18, 58, 26],
+        [12, 44,  4, 36, 14, 46,  6, 38], [60, 28, 52, 20, 62, 30, 54, 22],
+        [ 3, 35, 11, 43,  1, 33,  9, 41], [51, 19, 59, 27, 49, 17, 57, 25],
+        [15, 47,  7, 39, 13, 45,  5, 37], [63, 31, 55, 23, 61, 29, 53, 21]])
+    
+    img_array = np.array(image.convert('RGB'), dtype=np.float32)
+    height, width, _ = img_array.shape
+    
+    for y in range(height):
+        for x in range(width):
+            threshold = (bayer_matrix[y % 8, x % 8] / 64.0 - 0.5) * 50
+            pixel = np.clip(img_array[y, x] + threshold, 0, 255)
+            img_array[y, x] = find_closest_color(pixel, palette)
+            
+    return Image.fromarray(img_array.astype(np.uint8))
+
+# --- Image to Buffer Conversion ---
 
 def image_to_bw_data(image: Image.Image):
     byte_width = (image.width + 7) // 8
@@ -79,6 +124,8 @@ def image_to_bwr_data(image: Image.Image):
                 b_buffer[byte_index] |= (1 << bit_index)
     return bytes(b_buffer) + bytes(r_buffer)
 
+# --- BLE Communication ---
+
 async def send_command(client, cmd, data=None, with_response=True):
     payload = bytearray([cmd])
     if data: payload.extend(data)
@@ -87,9 +134,7 @@ async def send_command(client, cmd, data=None, with_response=True):
 async def write_image_data(client, image_data, mtu_size, step='bw'):
     logger.info(f"Writing image data (step: {step}) with MTU size: {mtu_size}")
     chunk_size = mtu_size - 2
-    if chunk_size <= 0:
-        logger.error(f"MTU size {mtu_size} is too small to send data.")
-        return
+    if chunk_size <= 0: return
     interleaved_count = 10
     no_reply_count = interleaved_count
     total_chunks = (len(image_data) + chunk_size - 1) // chunk_size
@@ -107,14 +152,13 @@ async def write_image_data(client, image_data, mtu_size, step='bw'):
         else:
             no_reply_count -= 1
 
+# --- Main Logic ---
+
 def render_text_to_image(lines, width, height, font_path, font_size, color):
     image = Image.new('RGB', (width, height), (255, 255, 255))
     draw = ImageDraw.Draw(image)
-    try:
-        font = ImageFont.truetype(font_path, font_size)
-    except IOError:
-        logger.warning(f"Font not found at {font_path}. Using default font.")
-        font = ImageFont.load_default()
+    try: font = ImageFont.truetype(font_path, font_size)
+    except IOError: font = ImageFont.load_default()
     y_text = 0
     for line in lines:
         bbox = font.getbbox(line)
@@ -124,11 +168,10 @@ def render_text_to_image(lines, width, height, font_path, font_size, color):
         y_text += line_height + 2
     return image
 
-async def main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither):
+async def main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither, resize_mode):
     mtu_size_from_device = 0
     resolution_from_device = None
-    config_event = asyncio.Event()
-    mtu_event = asyncio.Event()
+    config_event, mtu_event = asyncio.Event(), asyncio.Event()
     msg_index = 0
 
     def notification_handler(sender, data):
@@ -141,15 +184,12 @@ async def main_logic(address, adapter, image_path, text, font, size, color, widt
                 if resolution:
                     resolution_from_device = resolution
                     logger.info(f"Detected driver 0x{driver_byte:02x}, setting resolution to {resolution}")
-                else:
-                    logger.warning(f"Unknown driver byte 0x{driver_byte:02x}, resolution not set.")
             config_event.set()
         else:
             try:
                 decoded_data = data.decode('utf-8')
                 if decoded_data.startswith('mtu='):
-                    mtu_val = int(decoded_data.split('=')[1])
-                    mtu_size_from_device = mtu_val
+                    mtu_size_from_device = int(decoded_data.split('=')[1])
                     logger.info(f"MTU updated to: {mtu_size_from_device}")
                     if not mtu_event.is_set(): mtu_event.set()
             except UnicodeDecodeError: pass
@@ -161,67 +201,67 @@ async def main_logic(address, adapter, image_path, text, font, size, color, widt
         await client.connect()
         logger.info(f"Connected to {client.address}")
         await client.start_notify(CHARACTERISTIC_UUID, notification_handler)
-        logger.info("Started notifications, sending INIT to get config...")
         await send_command(client, EpdCmd.INIT)
         try:
-            logger.info("Waiting for config and MTU from device (timeout 10s)...")
             await asyncio.wait_for(asyncio.gather(config_event.wait(), mtu_event.wait()), timeout=10.0)
         except asyncio.TimeoutError:
             logger.warning("Timed out waiting for config/MTU. Using defaults.")
             if not mtu_event.is_set(): mtu_size_from_device = client.mtu_size
         
-        if resolution_from_device:
-            width, height = resolution_from_device
-        elif width is None or height is None:
-            logger.error("Resolution could not be determined from device and was not provided. Aborting.")
-            return
-
+        if width is None and height is None:
+            if resolution_from_device:
+                width, height = resolution_from_device
+            else:
+                logger.error("Resolution could not be determined. Please specify with --width and --height.")
+                return
         logger.info(f"Using final resolution: {width}x{height}")
 
         if clear:
-            logger.info("Sending Clear command...")
-            await send_command(client, EpdCmd.CLEAR)
-            await asyncio.sleep(2)
+            await send_command(client, EpdCmd.CLEAR); await asyncio.sleep(2)
 
         if image_path:
             logger.info(f"Opening image: {image_path}")
             with Image.open(image_path) as img:
-                img = img.resize((width, height))
+                if resize_mode == 'fit':
+                    img.thumbnail((width, height))
+                    new_img = Image.new('RGB', (width, height), (255, 255, 255))
+                    new_img.paste(img, ((width - img.width) // 2, (height - img.height) // 2))
+                    img = new_img
+                elif resize_mode == 'crop':
+                    img = ImageOps.fit(img, (width, height), Image.Resampling.LANCZOS)
+                else: # stretch
+                    img = img.resize((width, height))
         elif text:
-            logger.info("Rendering text to image...")
-            lines = text.split('\\n')
-            img = render_text_to_image(lines, width, height, font, size, color)
-        else:
-            return
+            img = render_text_to_image(text.split('\\n'), width, height, font, size, color)
+        else: return
 
-        if dither == 'floyd':
-            logger.info("Applying Floyd-Steinberg dithering...")
+        if dither != 'none':
+            logger.info(f"Applying {dither} dithering...")
             palette = THREE_COLOR_PALETTE if color_mode == 'bwr' else TWO_COLOR_PALETTE
-            img = floyd_steinberg_dither(img, palette)
+            if dither == 'bayer':
+                img = bayer_dither(img, palette)
+            else:
+                img = dither(img, palette, dither)
 
         if color_mode == 'bwr':
-            logger.info("Processing image for Black/White/Red display...")
             epd_data = image_to_bwr_data(img)
             half_len = len(epd_data) // 2
             await write_image_data(client, epd_data[:half_len], mtu_size_from_device, step='bw')
             await write_image_data(client, epd_data[half_len:], mtu_size_from_device, step='red')
         else:
-            logger.info("Processing image for Black/White display...")
             epd_data = image_to_bw_data(img)
             await write_image_data(client, epd_data, mtu_size_from_device, step='bw')
         
-        logger.info("Sending Refresh command...")
-        await send_command(client, EpdCmd.REFRESH)
-        logger.info("Waiting for refresh to complete...")
-        await asyncio.sleep(5)
+        await send_command(client, EpdCmd.REFRESH); await asyncio.sleep(5)
         
     except Exception as e:
         logger.error(f"An error occurred: {e}", exc_info=True)
     finally:
         if client.is_connected:
-            await client.stop_notify(CHARACTERISTIC_UUID)
-            await client.disconnect()
+            await client.stop_notify(CHARACTERISTIC_UUID); await client.disconnect()
             logger.info("Disconnected.")
+
+# --- CLI Definition ---
 
 @click.group()
 def cli(): pass
@@ -229,29 +269,25 @@ def cli(): pass
 @cli.command()
 @click.option('--adapter', help='Bluetooth adapter to use, e.g., hci0')
 def scan(adapter):
-    async def scan_logic(adapter):
-        print(f"Scanning for devices using adapter {adapter or 'default'}...")
-        devices = await BleakScanner.discover(adapter=adapter)
-        for d in devices: print(f"- {d.address}: {d.name}")
-    asyncio.run(scan_logic(adapter))
+    asyncio.run(BleakScanner.discover(adapter=adapter))
 
 @cli.command()
-@click.option('--address', required=True, help='BLE device address.')
-@click.option('--adapter', help='Bluetooth adapter to use, e.g., hci0')
-@click.option('--image', 'image_path', type=click.Path(exists=True), help='Path to the image file.')
-@click.option('--text', help='Text to display. Use "\\n" for new lines.')
-@click.option('--font', default='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', help='Path to TTF font file.')
-@click.option('--size', default=24, help='Font size.')
-@click.option('--color', default='black', help='Text color (black or red).')
-@click.option('--width', default=None, type=int, help='EPD width. Overrides auto-detection.')
-@click.option('--height', default=None, type=int, help='EPD height. Overrides auto-detection.')
-@click.option('--clear', is_flag=True, help='Clear the screen before sending.')
-@click.option('--color-mode', type=click.Choice(['bw', 'bwr'], case_sensitive=False), default='bw', help='Color mode (bw or bwr for black/white/red).')
-@click.option('--dither', type=click.Choice(['none', 'floyd'], case_sensitive=False), default='floyd', help='Dithering algorithm.')
-def send(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither):
-    if not image_path and not text:
-        raise click.UsageError("Either --image or --text must be provided.")
-    asyncio.run(main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither))
+@click.option('--address', required=True)
+@click.option('--adapter')
+@click.option('--image', 'image_path', type=click.Path(exists=True))
+@click.option('--text')
+@click.option('--font', default='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
+@click.option('--size', default=24)
+@click.option('--color', default='black')
+@click.option('--width', type=int)
+@click.option('--height', type=int)
+@click.option('--clear', is_flag=True)
+@click.option('--color-mode', type=click.Choice(['bw', 'bwr']), default='bw')
+@click.option('--dither', type=click.Choice(['none', 'floyd', 'atkinson', 'jarvis', 'stucki', 'bayer']), default='floyd')
+@click.option('--resize-mode', type=click.Choice(['stretch', 'fit', 'crop']), default='stretch')
+def send(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither, resize_mode):
+    if not image_path and not text: raise click.UsageError("Either --image or --text must be provided.")
+    asyncio.run(main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither, resize_mode))
 
 if __name__ == '__main__':
     cli()
