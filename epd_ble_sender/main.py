@@ -30,21 +30,6 @@ logger = logging.getLogger(__name__)
 def find_closest_color(pixel, palette):
     return palette[np.argmin(np.sqrt(np.sum((palette - pixel)**2, axis=1)))]
 
-def apply_error_diffusion(img_array, error_matrix, quant_error):
-    height, width, _ = img_array.shape
-    matrix_h, matrix_w = len(error_matrix), len(error_matrix[0])
-    center_x = matrix_w // 2
-    
-    for my in range(matrix_h):
-        for mx in range(matrix_w):
-            if error_matrix[my][mx] == 0: continue
-            
-            x = int(img_array.shape[1] + mx - center_x)
-            y = int(img_array.shape[0] + my)
-
-            if 0 <= x < width and 0 <= y < height:
-                img_array[y, x] += quant_error * error_matrix[my][mx]
-
 def dither(image: Image.Image, palette: np.ndarray, algorithm: str):
     img_array = np.array(image.convert('RGB'), dtype=np.float32)
     height, width, _ = img_array.shape
@@ -168,7 +153,7 @@ def render_text_to_image(lines, width, height, font_path, font_size, color):
         y_text += line_height + 2
     return image
 
-async def main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither, resize_mode):
+async def main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode):
     mtu_size_from_device = 0
     resolution_from_device = None
     config_event, mtu_event = asyncio.Event(), asyncio.Event()
@@ -235,13 +220,13 @@ async def main_logic(address, adapter, image_path, text, font, size, color, widt
             img = render_text_to_image(text.split('\\n'), width, height, font, size, color)
         else: return
 
-        if dither != 'none':
-            logger.info(f"Applying {dither} dithering...")
+        if dither_algo != 'none':
+            logger.info(f"Applying {dither_algo} dithering...")
             palette = THREE_COLOR_PALETTE if color_mode == 'bwr' else TWO_COLOR_PALETTE
-            if dither == 'bayer':
+            if dither_algo == 'bayer':
                 img = bayer_dither(img, palette)
             else:
-                img = dither(img, palette, dither)
+                img = dither(img, palette, dither_algo)
 
         if color_mode == 'bwr':
             epd_data = image_to_bwr_data(img)
@@ -283,11 +268,11 @@ def scan(adapter):
 @click.option('--height', type=int)
 @click.option('--clear', is_flag=True)
 @click.option('--color-mode', type=click.Choice(['bw', 'bwr']), default='bw')
-@click.option('--dither', type=click.Choice(['none', 'floyd', 'atkinson', 'jarvis', 'stucki', 'bayer']), default='floyd')
+@click.option('--dither', 'dither_algo', type=click.Choice(['none', 'floyd', 'atkinson', 'jarvis', 'stucki', 'bayer']), default='floyd')
 @click.option('--resize-mode', type=click.Choice(['stretch', 'fit', 'crop']), default='stretch')
-def send(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither, resize_mode):
+def send(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode):
     if not image_path and not text: raise click.UsageError("Either --image or --text must be provided.")
-    asyncio.run(main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither, resize_mode))
+    asyncio.run(main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode))
 
 if __name__ == '__main__':
     cli()
