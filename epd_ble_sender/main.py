@@ -127,9 +127,13 @@ async def write_image_data(client, image_data, mtu_size, interleaved_count, step
         header = (0x0F if step == 'bw' else 0x00) | (0x00 if i == 0 else 0xF0)
         data_payload = bytearray([header])
         data_payload.extend(chunk)
-        with_response = no_reply_count <= 0
+        
+        is_last_chunk = (i + chunk_size) >= len(image_data)
+        with_response = (no_reply_count <= 1 and interleaved_count > 0) or is_last_chunk
+
         logger.info(f"⇑ Sending chunk {i // chunk_size + 1}/{total_chunks} (header: {header:02x}, with_response={with_response})")
         await send_command(client, EpdCmd.WRITE_IMG, data_payload, with_response=with_response)
+        
         if with_response:
             no_reply_count = interleaved_count
             await asyncio.sleep(0.05)
