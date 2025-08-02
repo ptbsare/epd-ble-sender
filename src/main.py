@@ -324,8 +324,8 @@ async def main_logic(address, adapter, image_path, text, font, size, color, bg_c
             logger.info("🎉 Successfully sent image to device.")
             break # Exit retry loop on success
 
-        except (BleakDBusError, asyncio.TimeoutError, BleakDeviceNotFoundError) as e:
-            logger.error(f"An error occurred: {e}")
+        except (BleakDBusError, asyncio.TimeoutError, BleakDeviceNotFoundError, EOFError) as e:
+            logger.error(f"A connection error occurred: {e}")
             if attempt > 0:
                 backoff_delay = 16 ** (retry - attempt + 1)
                 logger.warning(f"Connection failed. Retrying in {backoff_delay} seconds... ({attempt-1} attempts left)")
