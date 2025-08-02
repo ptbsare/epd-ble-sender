@@ -1,6 +1,7 @@
 import asyncio
 import click
 from bleak import BleakClient, BleakScanner
+from bleak.exc import BleakDBusError
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 import logging
 import sys
@@ -201,116 +202,127 @@ def render_text_to_image(text_content, width, height, default_font_path, default
 
     return image
 
-async def main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count):
-    mtu_size_from_device = 0
-    resolution_from_device = None
-    config_event, mtu_event = asyncio.Event(), asyncio.Event()
-    msg_index = 0
+async def main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count, retry):
+    # Pre-calculate image to avoid re-calculating on retry
+    if image_path:
+        logger.info(f"Opening image: {image_path}")
+        with Image.open(image_path) as img_opened:
+            img = img_opened.copy() # Work on a copy
+    elif text:
+        # Resolution must be known before rendering text
+        # We will determine it in the first connection attempt
+        img = None
+    else:
+        return
 
-    def notification_handler(sender, data):
-        nonlocal mtu_size_from_device, msg_index, resolution_from_device
-        if msg_index == 0:
-            logger.info(f"⇓ Received config: {data.hex()}")
-            if len(data) >= 12: # sizeof(epd_config_t) is at least 12
-                config = {
-                    'mosi_pin': data[0], 'sclk_pin': data[1], 'cs_pin': data[2],
-                    'dc_pin': data[3], 'rst_pin': data[4], 'busy_pin': data[5],
-                    'bs_pin': data[6], 'model_id': data[7], 'wakeup_pin': data[8],
-                    'led_pin': data[9], 'en_pin': data[10], 'display_mode': data[11]
-                }
-                logger.info(f"  Parsed config: {config}")
-                
-                driver_byte = config['model_id']
-                resolution = DRIVER_TO_RESOLUTION.get(driver_byte)
-                if resolution:
-                    resolution_from_device = resolution
-                    logger.info(f"Detected driver 0x{driver_byte:02x}, setting resolution to {resolution}")
-                else:
-                    logger.warning(f"Unknown driver 0x{driver_byte:02x}")
-            else:
-                logger.warning(f"Received config is too short ({len(data)} bytes)")
-
-            config_event.set()
-        else:
-            try:
-                decoded_data = data.decode('utf-8')
-                if decoded_data.startswith('mtu='):
-                    mtu_size_from_device = int(decoded_data.split('=')[1])
-                    logger.info(f"MTU updated to: {mtu_size_from_device}")
-                    if not mtu_event.is_set(): mtu_event.set()
-            except UnicodeDecodeError: 
-                logger.warning(f"Received non-config notification that is not UTF-8: {data.hex()}")
-        msg_index += 1
-
-    logger.info(f"Attempting to connect to {address} using adapter {adapter or 'default'}...")
-    client = BleakClient(address, adapter=adapter)
-    try:
-        await client.connect()
-        logger.info(f"Connected to {client.address}")
-        await client.start_notify(CHARACTERISTIC_UUID, notification_handler)
-        await send_command(client, EpdCmd.INIT)
+    for attempt in range(retry, -1, -1):
+        client = BleakClient(address, adapter=adapter)
         try:
-            await asyncio.wait_for(asyncio.gather(config_event.wait(), mtu_event.wait()), timeout=10.0)
-        except asyncio.TimeoutError:
-            logger.warning("Timed out waiting for config/MTU. Using defaults.")
-            if not mtu_event.is_set(): mtu_size_from_device = client.mtu_size
-        
-        if width is None and height is None:
-            if resolution_from_device:
-                width, height = resolution_from_device
-            else:
-                logger.error("Resolution could not be determined. Please specify with --width and --height.")
-                return
-        logger.info(f"Using final resolution: {width}x{height}")
+            logger.info(f"Attempting to connect to {address} (adapter: {adapter or 'default'})...")
+            await client.connect()
+            logger.info(f"Connected to {client.address}")
 
-        if clear:
-            await send_command(client, EpdCmd.CLEAR); await asyncio.sleep(2)
+            # --- Device Configuration ---
+            mtu_size_from_device = 0
+            resolution_from_device = None
+            config_event, mtu_event = asyncio.Event(), asyncio.Event()
+            msg_index = 0
 
-        if image_path:
-            logger.info(f"Opening image: {image_path}")
-            with Image.open(image_path) as img:
+            def notification_handler(sender, data):
+                nonlocal mtu_size_from_device, msg_index, resolution_from_device
+                if msg_index == 0:
+                    logger.info(f"⇓ Received config: {data.hex()}")
+                    if len(data) >= 12:
+                        config = {'model_id': data[7]}
+                        driver_byte = config['model_id']
+                        resolution = DRIVER_TO_RESOLUTION.get(driver_byte)
+                        if resolution:
+                            resolution_from_device = resolution
+                            logger.info(f"Detected driver 0x{driver_byte:02x}, setting resolution to {resolution}")
+                        else: logger.warning(f"Unknown driver 0x{driver_byte:02x}")
+                    config_event.set()
+                else:
+                    try:
+                        if data.decode('utf-8').startswith('mtu='):
+                            mtu_size_from_device = int(data.decode('utf-8').split('=')[1])
+                            logger.info(f"MTU updated to: {mtu_size_from_device}")
+                            if not mtu_event.is_set(): mtu_event.set()
+                    except (UnicodeDecodeError, IndexError): pass
+                msg_index += 1
+
+            await client.start_notify(CHARACTERISTIC_UUID, notification_handler)
+            await send_command(client, EpdCmd.INIT)
+            try:
+                await asyncio.wait_for(asyncio.gather(config_event.wait(), mtu_event.wait()), timeout=10.0)
+            except asyncio.TimeoutError:
+                logger.warning("Timed out waiting for config/MTU. Using defaults.")
+                if not mtu_event.is_set(): mtu_size_from_device = client.mtu_size
+            
+            final_width, final_height = width, height
+            if final_width is None and final_height is None:
+                if resolution_from_device:
+                    final_width, final_height = resolution_from_device
+                else:
+                    logger.error("Resolution could not be determined. Please specify with --width and --height.")
+                    return
+            logger.info(f"Using final resolution: {final_width}x{final_height}")
+
+            # --- Image Preparation ---
+            if img is None and text: # Render text now that we have dimensions
+                img = render_text_to_image(text, final_width, final_height, font, size, color)
+
+            if image_path: # Resize image now that we have dimensions
                 if resize_mode == 'fit':
-                    img.thumbnail((width, height))
-                    new_img = Image.new('RGB', (width, height), (255, 255, 255))
-                    new_img.paste(img, ((width - img.width) // 2, (height - img.height) // 2))
+                    img.thumbnail((final_width, final_height))
+                    new_img = Image.new('RGB', (final_width, final_height), (255, 255, 255))
+                    new_img.paste(img, ((final_width - img.width) // 2, (final_height - img.height) // 2))
                     img = new_img
                 elif resize_mode == 'crop':
-                    img = ImageOps.fit(img, (width, height), Image.Resampling.LANCZOS)
+                    img = ImageOps.fit(img, (final_width, final_height), Image.Resampling.LANCZOS)
                 else: # stretch
-                    img = img.resize((width, height))
-        elif text:
-            img = render_text_to_image(text, width, height, font, size, color)
-        else: return
+                    img = img.resize((final_width, final_height))
 
-        if dither_algo != 'none':
-            logger.info(f"Applying {dither_algo} dithering...")
-            palette = THREE_COLOR_PALETTE if color_mode == 'bwr' else TWO_COLOR_PALETTE
-            if dither_algo == 'bayer':
-                img = bayer_dither(img, palette)
+            if dither_algo != 'none':
+                logger.info(f"Applying {dither_algo} dithering...")
+                palette = THREE_COLOR_PALETTE if color_mode == 'bwr' else TWO_COLOR_PALETTE
+                dither_func = bayer_dither if dither_algo == 'bayer' else dither
+                img = dither_func(img, palette, dither_algo) if dither_algo != 'bayer' else dither_func(img, palette)
+
+            # --- Data Transfer ---
+            if clear:
+                await send_command(client, EpdCmd.CLEAR); await asyncio.sleep(2)
+
+            if color_mode == 'bwr':
+                epd_data = image_to_bwr_data(img)
+                half_len = len(epd_data) // 2
+                await write_image_data(client, epd_data[:half_len], mtu_size_from_device, interleaved_count, step='bw')
+                await write_image_data(client, epd_data[half_len:], mtu_size_from_device, interleaved_count, step='red')
             else:
-                img = dither(img, palette, dither_algo)
+                epd_data = image_to_bw_data(img)
+                await write_image_data(client, epd_data, mtu_size_from_device, interleaved_count, step='bw')
+            
+            await send_command(client, EpdCmd.REFRESH); await asyncio.sleep(5)
+            logger.info("🎉 Successfully sent image to device.")
+            break # Exit retry loop on success
 
-        if color_mode == 'bwr':
-            epd_data = image_to_bwr_data(img)
-            half_len = len(epd_data) // 2
-            await write_image_data(client, epd_data[:half_len], mtu_size_from_device, interleaved_count, step='bw')
-            await write_image_data(client, epd_data[half_len:], mtu_size_from_device, interleaved_count, step='red')
-        else:
-            epd_data = image_to_bw_data(img)
-            await write_image_data(client, epd_data, mtu_size_from_device, interleaved_count, step='bw')
-        
-        await send_command(client, EpdCmd.REFRESH); await asyncio.sleep(5)
-        
-    except Exception as e:
-        logger.error(f"An error occurred: {e}", exc_info=True)
-    finally:
-        if client.is_connected:
-            await client.stop_notify(CHARACTERISTIC_UUID)
-            await client.disconnect()
-            logger.info("Disconnected. Waiting for graceful shutdown...")
-            await asyncio.sleep(2) # Give time for BLE stack to clean up
-            logger.info("Shutdown complete.")
-
+        except (BleakDBusError, asyncio.TimeoutError) as e:
+            logger.error(f"An error occurred: {e}")
+            if attempt > 0:
+                backoff_delay = 16 ** (retry - attempt + 1)
+                logger.warning(f"Connection failed. Retrying in {backoff_delay} seconds... ({attempt-1} attempts left)")
+                await asyncio.sleep(backoff_delay)
+                continue
+            else:
+                logger.error("All retry attempts failed. Giving up.")
+                break
+        except Exception as e:
+            logger.error(f"An unhandled error occurred: {e}", exc_info=True)
+            break # Don't retry on unknown errors
+        finally:
+            if client.is_connected:
+                await client.stop_notify(CHARACTERISTIC_UUID)
+                await client.disconnect()
+                logger.info("Disconnected.")
 
 # --- CLI Definition ---
 
@@ -336,10 +348,11 @@ def scan(adapter):
 @click.option('--color-mode', type=click.Choice(['bw', 'bwr']), default='bw')
 @click.option('--dither', 'dither_algo', type=click.Choice(['none', 'floyd', 'atkinson', 'jarvis', 'stucki', 'bayer']), default='floyd')
 @click.option('--resize-mode', type=click.Choice(['stretch', 'fit', 'crop']), default='stretch')
-@click.option('--interleaved-count', default=62, type=int, help='Number of chunks to send before waiting for a response.')
-def send(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count):
+@click.option('--interleaved-count', default=31, type=int, help='Number of chunks to send before waiting for a response.')
+@click.option('--retry', default=3, type=int, help='Max number of retry attempts on connection failure.')
+def send(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count, retry):
     if not image_path and not text: raise click.UsageError("Either --image or --text must be provided.")
-    asyncio.run(main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count))
+    asyncio.run(main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count, retry))
 
 if __name__ == '__main__':
     cli()

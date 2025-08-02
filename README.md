@@ -1,77 +1,106 @@
 # EPD BLE Sender
 
-A command-line tool to send images and text to an E-Paper Display (EPD) via Bluetooth Low Energy (BLE).
+[Read this document in Chinese (中文说明)](README_zh-CN.md)
 
-## Installation
+A powerful command-line tool to send images and text to various E-Paper Displays (EPD) via Bluetooth Low Energy (BLE).
 
-This project uses a `requirements.txt` file and can be run with `uv`.
+## ✨ Features
 
-1.  **Install uv:**
-    ```bash
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    ```
+- **Multiple Content Sources**: Supports sending local image files or dynamically generating images from text via the command line.
+- **Advanced Text Layout**: Use a simple markup language to precisely control the **font size**, **color** (black/red), **alignment** (left/center/right), and **font** for each line of text.
+- **Smart Device Discovery**: Automatically scans for and connects to specified BLE devices, and can auto-detect screen **resolution** and **MTU size** via device notifications.
+- **Rich Image Processing**:
+    - **Multiple Dithering Algorithms**: Built-in support for `Floyd-Steinberg`, `Atkinson`, `Jarvis-Stucki`, `Stucki`, and `Bayer` algorithms to optimize image display on monochrome or tri-color screens.
+    - **Flexible Resize Modes**: Supports `stretch`, `fit`, and `crop` modes to match the screen dimensions.
+- **Powerful Robustness**:
+    - **Auto-Reconnect**: Automatically attempts to reconnect if the connection is dropped or a transmission error occurs.
+    - **Exponential Backoff**: Uses an exponentially increasing delay between reconnection attempts, significantly improving the success rate in unstable environments.
 
-2.  **Create a virtual environment and install dependencies:**
-    Navigate to the `pyproject` directory and run:
+## ⚙️ Installation and Usage
+
+This project uses [uv](https://github.com/astral-sh/uv) for package management and execution, which provides extremely fast dependency resolution.
+
+1.  **Create a Virtual Environment**
     ```bash
     uv venv
-    uv pip sync -r requirements.txt
     ```
-    This will create a `.venv` directory and install the required packages, including `numpy`.
 
-## Usage
+2.  **Activate the Virtual Environment**
+    -   Linux / macOS:
+        ```bash
+        source .venv/bin/activate
+        ```
+    -   Windows (PowerShell):
+        ```powershell
+        .venv\Scripts\Activate.ps1
+        ```
 
-Activate the virtual environment first:
-```bash
-source .venv/bin/activate
-```
+3.  **Sync Dependencies**
+    ```bash
+    uv sync
+    ```
 
-The script will **auto-detect the screen resolution** from the device. You can override this with `--width` and `--height`.
+## 🚀 How to Use
 
-### Basic Example
+The `uv run` command ensures that the correct Python interpreter and dependencies are used, even if you forget to activate the virtual environment.
 
-```bash
-# Scan for your device's address first
-python epd_ble_sender/main.py scan --adapter hci0
+### 1. Scan for Devices
 
-# Send an image to a three-color screen
-python epd_ble_sender/main.py send --address <YOUR_DEVICE_ADDRESS> --adapter hci0 --image /path/to/image.png --color-mode bwr
-```
-
-### Advanced Image Handling
-
-**Resize Modes (`--resize-mode`):**
-- `stretch` (default): Stretches the image to fit the screen, ignoring aspect ratio.
-- `fit`: Resizes the image to fit within the screen while maintaining aspect ratio, padding with white.
-- `crop`: Resizes the image to fill the screen while maintaining aspect ratio, cropping any excess.
+First, scan for nearby BLE devices to find the address of your e-paper display.
 
 ```bash
-# Crop a large image to fit the screen perfectly
-python epd_ble_sender/main.py send --address <ADDR> --adapter hci0 --image /path/to/large.jpg --color-mode bwr --resize-mode crop
+uv run src/main.py scan
 ```
+Take note of your device's address, e.g., `XX:XX:XX:XX:XX:XX`.
 
-**Dithering Algorithms (`--dither`):**
-- `floyd` (default): Floyd-Steinberg dithering.
-- `atkinson`, `jarvis`, `stucki`: Other error-diffusion algorithms.
-- `bayer`: Ordered dithering.
-- `none`: No dithering.
+### 2. Send Content
 
+Use the `send` command to send an image or text.
+
+**Send an image:**
 ```bash
-# Send an image using Atkinson dithering
-python epd_ble_sender/main.py send --address <ADDR> --adapter hci0 --image /path/to/photo.jpg --color-mode bwr --dither atkinson
+uv run src/main.py send --address XX:XX:XX:XX:XX:XX --image /path/to/your/image.png --color-mode bwr --dither floyd
 ```
 
-### All Options
+**Send text:**
+```bash
+uv run src/main.py send --address XX:XX:XX:XX:XX:XX --text "Hello World" --size 30
+```
 
-*   `--address`: (Required) The BLE address of your EPD.
-*   `--adapter`: The Bluetooth adapter to use, e.g., `hci0`.
-*   `--image`: Path to the image file.
-*   `--text`: Text to display. Use `\n` for new lines.
-*   `--font`: Path to a TrueType font file.
-*   `--size`: Font size.
-*   `--color`: Text color (e.g., `black`, `red`).
-*   `--width`, `--height`: (Optional) Override auto-detected screen resolution.
-*   `--clear`: A flag to clear the screen before sending new content.
-*   `--color-mode`: `bw` for black/white, `bwr` for black/white/red.
-*   `--dither`: `none`, `floyd`, `atkinson`, `jarvis`, `stucki`, `bayer`.
-*   `--resize-mode`: `stretch`, `fit`, `crop`.
+**Use advanced text layout:**
+```bash
+uv run src/main.py send --address XX:XX:XX:XX:XX:XX \
+--text "[size=40,align=center]Weather Report\n[color=red,size=20]High Temp. Alert\n[align=right]2025-08-02" \
+--color-mode bwr
+```
+
+## 📚 Command-Line Options Reference
+
+(For a full list of commands and options, please refer to the [Chinese README](README_zh-CN.md).)
+
+## 📦 Packaging as an Executable
+
+You can use `PyInstaller` to package this tool into a standalone binary, making it easy to run on machines without a Python environment.
+
+1.  **Install PyInstaller**
+    ```bash
+    uv pip install pyinstaller
+    ```
+
+2.  **Run Packaging**
+
+    > **Note**: The `--add-data` argument is crucial for including the default font file in the executable. Please modify the font path according to your system.
+
+    -   **Linux / macOS:**
+        ```bash
+        pyinstaller --onefile --name epd-sender \
+        --add-data="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:." \
+        src/main.py
+        ```
+    -   **Windows:** (Assuming the font is at `C:\Windows\Fonts\arial.ttf`)
+        ```powershell
+        pyinstaller --onefile --name epd-sender.exe `
+        --add-data="C:\Windows\Fonts\arial.ttf;." `
+        src/main.py
+        ```
+    After successful packaging, you will find the `epd-sender` or `epd-sender.exe` file in the `dist` directory.
