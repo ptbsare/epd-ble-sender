@@ -5,6 +5,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 import logging
 import sys
 import numpy as np
+import re
 
 # Constants
 SERVICE_UUID = "62750001-d828-918d-fb46-b6c11c675aec"
@@ -142,18 +143,62 @@ async def write_image_data(client, image_data, mtu_size, interleaved_count, step
 
 # --- Main Logic ---
 
-def render_text_to_image(lines, width, height, font_path, font_size, color):
+def parse_line_markup(line):
+    """Parses a line for [key=value, ...] markup."""
+    markup_match = re.match(r'^\s*\[(.*?)\]\s*(.*)', line)
+    if not markup_match:
+        return {}, line
+
+    markup_str, text = markup_match.groups()
+    props = {}
+    for part in markup_str.split(','):
+        if '=' in part:
+            key, value = part.split('=', 1)
+            props[key.strip()] = value.strip()
+    return props, text
+
+def render_text_to_image(text_content, width, height, default_font_path, default_font_size, default_color):
     image = Image.new('RGB', (width, height), (255, 255, 255))
     draw = ImageDraw.Draw(image)
-    try: font = ImageFont.truetype(font_path, font_size)
-    except IOError: font = ImageFont.load_default()
     y_text = 0
-    for line in lines:
-        bbox = font.getbbox(line)
-        line_height = bbox[3] - bbox[1]
+    
+    cached_fonts = {}
+
+    for line in text_content.splitlines():
+        props, text = parse_line_markup(line)
+
+        # Determine properties for the current line
+        font_size = int(props.get('size', default_font_size))
+        font_path = props.get('font', default_font_path)
+        color = props.get('color', default_color)
+        align = props.get('align', 'left')
+
+        # Load font, caching to avoid reloading
+        font_key = (font_path, font_size)
+        if font_key not in cached_fonts:
+            try:
+                cached_fonts[font_key] = ImageFont.truetype(font_path, font_size)
+            except IOError:
+                logger.warning(f"Could not load font {font_path}. Using default.")
+                cached_fonts[font_key] = ImageFont.load_default()
+        font = cached_fonts[font_key]
+
+        # Calculate text position
+        bbox = font.getbbox(text)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        
+        x_text = 0
+        if align == 'center':
+            x_text = (width - text_width) / 2
+        elif align == 'right':
+            x_text = width - text_width
+
+        # Draw text
         fill_color = (255, 0, 0) if color.lower() == 'red' else (0, 0, 0)
-        draw.text((0, y_text), line, font=font, fill=fill_color)
-        y_text += line_height + 2
+        draw.text((x_text, y_text), text, font=font, fill=fill_color)
+        y_text += text_height + 2 # Add a small padding
+
     return image
 
 async def main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count):
@@ -234,7 +279,7 @@ async def main_logic(address, adapter, image_path, text, font, size, color, widt
                 else: # stretch
                     img = img.resize((width, height))
         elif text:
-            img = render_text_to_image(text.split('\\n'), width, height, font, size, color)
+            img = render_text_to_image(text, width, height, font, size, color)
         else: return
 
         if dither_algo != 'none':
@@ -282,9 +327,9 @@ def scan(adapter):
 @click.option('--adapter')
 @click.option('--image', 'image_path', type=click.Path(exists=True))
 @click.option('--text')
-@click.option('--font', default='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
-@click.option('--size', default=24)
-@click.option('--color', default='black')
+@click.option('--font', default='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', help='Default font path.')
+@click.option('--size', default=24, help='Default font size.')
+@click.option('--color', default='black', help='Default text color (black or red).')
 @click.option('--width', type=int)
 @click.option('--height', type=int)
 @click.option('--clear', is_flag=True)
