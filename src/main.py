@@ -176,6 +176,8 @@ def render_text_to_image(text_content, width, height, default_font_path, default
         font_path = props.get('font', default_font_path)
         color = props.get('color', default_color)
         align = props.get('align', 'left')
+        
+        logger.info(f"Rendering line: '{text}' with props: {props} -> (size: {font_size}, color: {color}, align: {align})")
 
         # Load font, caching to avoid reloading
         font_key = (font_path, font_size)
