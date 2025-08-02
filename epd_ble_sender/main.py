@@ -116,11 +116,10 @@ async def send_command(client, cmd, data=None, with_response=True):
     if data: payload.extend(data)
     await client.write_gatt_char(CHARACTERISTIC_UUID, payload, response=with_response)
 
-async def write_image_data(client, image_data, mtu_size, step='bw'):
-    logger.info(f"Writing image data (step: {step}) with MTU size: {mtu_size}")
+async def write_image_data(client, image_data, mtu_size, interleaved_count, step='bw'):
+    logger.info(f"Writing image data (step: {step}) with MTU size: {mtu_size}, interleaved count: {interleaved_count}")
     chunk_size = mtu_size - 2
     if chunk_size <= 0: return
-    interleaved_count = 10
     no_reply_count = interleaved_count
     total_chunks = (len(image_data) + chunk_size - 1) // chunk_size
     for i in range(0, len(image_data), chunk_size):
@@ -153,7 +152,7 @@ def render_text_to_image(lines, width, height, font_path, font_size, color):
         y_text += line_height + 2
     return image
 
-async def main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode):
+async def main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count):
     mtu_size_from_device = 0
     resolution_from_device = None
     config_event, mtu_event = asyncio.Event(), asyncio.Event()
@@ -245,11 +244,11 @@ async def main_logic(address, adapter, image_path, text, font, size, color, widt
         if color_mode == 'bwr':
             epd_data = image_to_bwr_data(img)
             half_len = len(epd_data) // 2
-            await write_image_data(client, epd_data[:half_len], mtu_size_from_device, step='bw')
-            await write_image_data(client, epd_data[half_len:], mtu_size_from_device, step='red')
+            await write_image_data(client, epd_data[:half_len], mtu_size_from_device, interleaved_count, step='bw')
+            await write_image_data(client, epd_data[half_len:], mtu_size_from_device, interleaved_count, step='red')
         else:
             epd_data = image_to_bw_data(img)
-            await write_image_data(client, epd_data, mtu_size_from_device, step='bw')
+            await write_image_data(client, epd_data, mtu_size_from_device, interleaved_count, step='bw')
         
         await send_command(client, EpdCmd.REFRESH); await asyncio.sleep(5)
         
@@ -286,9 +285,10 @@ def scan(adapter):
 @click.option('--color-mode', type=click.Choice(['bw', 'bwr']), default='bw')
 @click.option('--dither', 'dither_algo', type=click.Choice(['none', 'floyd', 'atkinson', 'jarvis', 'stucki', 'bayer']), default='floyd')
 @click.option('--resize-mode', type=click.Choice(['stretch', 'fit', 'crop']), default='stretch')
-def send(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode):
+@click.option('--interleaved-count', default=62, type=int, help='Number of chunks to send before waiting for a response.')
+def send(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count):
     if not image_path and not text: raise click.UsageError("Either --image or --text must be provided.")
-    asyncio.run(main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode))
+    asyncio.run(main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count))
 
 if __name__ == '__main__':
     cli()
