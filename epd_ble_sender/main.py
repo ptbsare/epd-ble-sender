@@ -163,12 +163,25 @@ async def main_logic(address, adapter, image_path, text, font, size, color, widt
         nonlocal mtu_size_from_device, msg_index, resolution_from_device
         if msg_index == 0:
             logger.info(f"⇓ Received config: {data.hex()}")
-            if len(data) >= 8:
-                driver_byte = data[7]
+            if len(data) >= 12: # sizeof(epd_config_t) is at least 12
+                config = {
+                    'mosi_pin': data[0], 'sclk_pin': data[1], 'cs_pin': data[2],
+                    'dc_pin': data[3], 'rst_pin': data[4], 'busy_pin': data[5],
+                    'bs_pin': data[6], 'model_id': data[7], 'wakeup_pin': data[8],
+                    'led_pin': data[9], 'en_pin': data[10], 'display_mode': data[11]
+                }
+                logger.info(f"  Parsed config: {config}")
+                
+                driver_byte = config['model_id']
                 resolution = DRIVER_TO_RESOLUTION.get(driver_byte)
                 if resolution:
                     resolution_from_device = resolution
                     logger.info(f"Detected driver 0x{driver_byte:02x}, setting resolution to {resolution}")
+                else:
+                    logger.warning(f"Unknown driver 0x{driver_byte:02x}")
+            else:
+                logger.warning(f"Received config is too short ({len(data)} bytes)")
+
             config_event.set()
         else:
             try:
@@ -177,7 +190,8 @@ async def main_logic(address, adapter, image_path, text, font, size, color, widt
                     mtu_size_from_device = int(decoded_data.split('=')[1])
                     logger.info(f"MTU updated to: {mtu_size_from_device}")
                     if not mtu_event.is_set(): mtu_event.set()
-            except UnicodeDecodeError: pass
+            except UnicodeDecodeError: 
+                logger.warning(f"Received non-config notification that is not UTF-8: {data.hex()}")
         msg_index += 1
 
     logger.info(f"Attempting to connect to {address} using adapter {adapter or 'default'}...")
