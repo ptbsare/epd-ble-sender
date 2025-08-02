@@ -7,7 +7,10 @@ A powerful command-line tool to send images and text to various E-Paper Displays
 ## ✨ Features
 
 - **Multiple Content Sources**: Supports sending local image files or dynamically generating images from text via the command line.
-- **Advanced Text Layout**: Use a simple markup language to precisely control the **font size**, **color** (black/red), **alignment** (left/center/right), and **font** for each line of text.
+- **Advanced Text Layout**: 
+    - Use a simple markup language to precisely control the **font size**, **alignment** (left/center/right), and **font** for each line of text.
+    - Set text color to **black**, **red**, or **white**.
+    - Set the image background color to **white**, **black**, or **red**.
 - **Smart Device Discovery**: Automatically scans for and connects to specified BLE devices, and can auto-detect screen **resolution** and **MTU size** via device notifications.
 - **Rich Image Processing**:
     - **Multiple Dithering Algorithms**: Built-in support for `Floyd-Steinberg`, `Atkinson`, `Jarvis-Stucki`, `Stucki`, and `Bayer` algorithms to optimize image display on monochrome or tri-color screens.
@@ -62,16 +65,20 @@ Use the `send` command to send an image or text.
 uv run src/main.py send --address XX:XX:XX:XX:XX:XX --image /path/to/your/image.png --color-mode bwr --dither floyd
 ```
 
-**Send text:**
+**Send text with advanced layout:**
 ```bash
-uv run src/main.py send --address XX:XX:XX:XX:XX:XX --text "Hello World" --size 30
-```
-
-**Use advanced text layout:**
-```bash
+# This command creates an image with a white background (default)
 uv run src/main.py send --address XX:XX:XX:XX:XX:XX \
 --text "[size=40,align=center]Weather Report\n[color=red,size=20]High Temp. Alert\n[align=right]2025-08-02" \
 --color-mode bwr
+```
+
+**Send text with custom background and text colors:**
+```bash
+# This command creates an image with a black background and white text
+uv run src/main.py send --address XX:XX:XX:XX:XX:XX \
+--text "[size=30,color=white,align=center]Night Mode" \
+--bg-color black
 ```
 
 ## 📚 Command-Line Options Reference

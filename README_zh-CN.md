@@ -5,7 +5,10 @@
 ## ✨ 功能特性
 
 - **多种内容源**: 支持直接发送本地图像文件或通过命令行动态生成文本图像。
-- **高级文本排版**: 使用简单的标记语言，可以精确控制每一行文本的 **字体大小**、**颜色**（黑/红）、**对齐方式**（左/中/右）和 **字体**。
+- **高级文本排版**: 
+    - 使用简单的标记语言，可以精确控制每一行文本的 **字体大小**、**对齐方式**（左/中/右）和 **字体**。
+    - 可将文本颜色设置为 **黑**、**红**、**白**。
+    - 可将图像背景色设置为 **白**、**黑**、**红**。
 - **智能设备发现**: 自动扫描并连接到指定的BLE设备，并能通过设备通知自动检测屏幕 **分辨率** 和 **MTU** 大小。
 - **丰富的图像处理**:
     - **多种抖动算法**: 内置 `Floyd-Steinberg`, `Atkinson`, `Jarvis-Stucki`, `Stucki`, 和 `Bayer` 算法，以优化在黑白或三色屏幕上的图像显示效果。
@@ -60,16 +63,20 @@ uv run src/main.py scan
 uv run src/main.py send --address XX:XX:XX:XX:XX:XX --image /path/to/your/image.png --color-mode bwr --dither floyd
 ```
 
-**发送文本:**
-```bash
-uv run src/main.py send --address XX:XX:XX:XX:XX:XX --text "Hello World" --size 30
-```
-
 **使用高级文本排版:**
 ```bash
+# 此命令创建一个白色背景（默认）的图像
 uv run src/main.py send --address XX:XX:XX:XX:XX:XX \
 --text "[size=40,align=center]天气预报\n[color=red,size=20]高温警告\n[align=right]2025-08-02" \
 --color-mode bwr
+```
+
+**使用自定义背景和文本颜色:**
+```bash
+# 此命令创建一个黑色背景和白色文本的图像
+uv run src/main.py send --address XX:XX:XX:XX:XX:XX \
+--text "[size=30,color=white,align=center]夜间模式" \
+--bg-color black
 ```
 
 ## 📚 命令行选项参考
@@ -83,12 +90,13 @@ uv run src/main.py send --address XX:XX:XX:XX:XX:XX \
 - `--text TEXT`: 要渲染并发送的文本内容。支持 `\n` 换行。
 - `--font TEXT`: 默认字体文件的路径。
 - `--size INTEGER`: 默认字体大小。
-- `--color TEXT`: 默认文本颜色 (`black` 或 `red`)。
+- `--color TEXT`: 默认文本颜色 (`black`, `red`, 或 `white`)。
+- `--bg-color [white|black|red]`: 为文本渲染设置背景颜色 (默认为 `white`)。
 - `--width INTEGER`: 手动指定屏幕宽度。
 - `--height INTEGER`: 手动指定屏幕高度。
 - `--clear`: 发送前清空屏幕。
 - `--color-mode [bw|bwr]`: 颜色模式。`bw` 为黑白，`bwr` 为黑白红三色。
-- `--dither [none|floyd|atkinson|jarvis|stucki|bayer]`: 使用的抖动算法。
+- `--dither [auto|none|floyd|atkinson|jarvis|stucki|bayer]`: 使用的抖动算法。'auto' 模式下，为图片启用抖动，为文本禁用抖动。
 - `--resize-mode [stretch|fit|crop]`: 图像缩放模式。
 - `--interleaved-count INTEGER`: 发送多少个数据块后等待一次设备响应。
 - `--retry INTEGER`: 连接失败时的最大重试次数。

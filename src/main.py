@@ -204,7 +204,8 @@ def render_text_to_image(text_content, width, height, default_font_path, default
             x_text = width - text_width
 
         # Draw text
-        fill_color = (255, 0, 0) if color.lower() == 'red' else (0, 0, 0)
+        color_map = {'red': (255, 0, 0), 'white': (255, 255, 255), 'black': (0, 0, 0)}
+        fill_color = color_map.get(color.lower(), (0, 0, 0))
         draw.text((x_text, y_text), text, font=font, fill=fill_color)
         y_text += text_height + 2 # Add a small padding
 
@@ -359,7 +360,7 @@ def scan(adapter):
 @click.option('--text')
 @click.option('--font', default='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', help='Default font path.')
 @click.option('--size', default=24, help='Default font size.')
-@click.option('--color', default='black', help='Default text color (black or red).')
+@click.option('--color', default='black', help='Default text color (black, red, or white).')
 @click.option('--bg-color', type=click.Choice(['white', 'black', 'red']), default='white', help='Set the background color for text rendering.')
 @click.option('--width', type=int)
 @click.option('--height', type=int)
