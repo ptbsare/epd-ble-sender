@@ -22,7 +22,7 @@ THREE_COLOR_PALETTE = np.array([[0, 0, 0], [255, 255, 255], [255, 0, 0]])
 TWO_COLOR_PALETTE = np.array([[0, 0, 0], [255, 255, 255]])
 
 class EpdCmd:
-    INIT = 0x01; CLEAR = 0x02; REFRESH = 0x05; WRITE_IMG = 0x30
+    INIT = 0x01; CLEAR = 0x02; REFRESH = 0x05; WRITE_IMG = 0x30;
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stdout)
 logger = logging.getLogger(__name__)
@@ -158,8 +158,13 @@ def parse_line_markup(line):
             props[key.strip()] = value.strip()
     return props, text
 
-def render_text_to_image(text_content, width, height, default_font_path, default_font_size, default_color):
-    image = Image.new('RGB', (width, height), (255, 255, 255))
+def render_text_to_image(text_content, width, height, default_font_path, default_font_size, default_color, bg_color):
+    bg_color_map = {
+        'white': (255, 255, 255),
+        'black': (0, 0, 0),
+        'red': (255, 0, 0)
+    }
+    image = Image.new('RGB', (width, height), bg_color_map.get(bg_color, (255, 255, 255)))
     draw = ImageDraw.Draw(image)
     y_text = 0
     
@@ -205,7 +210,7 @@ def render_text_to_image(text_content, width, height, default_font_path, default
 
     return image
 
-async def main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count, retry):
+async def main_logic(address, adapter, image_path, text, font, size, color, bg_color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count, retry):
     # Pre-calculate image to avoid re-calculating on retry
     if image_path:
         logger.info(f"Opening image: {image_path}")
@@ -272,7 +277,7 @@ async def main_logic(address, adapter, image_path, text, font, size, color, widt
 
             # --- Image Preparation ---
             if img is None and text: # Render text now that we have dimensions
-                img = render_text_to_image(text, final_width, final_height, font, size, color)
+                img = render_text_to_image(text, final_width, final_height, font, size, color, bg_color)
 
             if image_path: # Resize image now that we have dimensions
                 if resize_mode == 'fit':
@@ -355,6 +360,7 @@ def scan(adapter):
 @click.option('--font', default='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', help='Default font path.')
 @click.option('--size', default=24, help='Default font size.')
 @click.option('--color', default='black', help='Default text color (black or red).')
+@click.option('--bg-color', type=click.Choice(['white', 'black', 'red']), default='white', help='Set the background color for text rendering.')
 @click.option('--width', type=int)
 @click.option('--height', type=int)
 @click.option('--clear', is_flag=True)
@@ -363,9 +369,9 @@ def scan(adapter):
 @click.option('--resize-mode', type=click.Choice(['stretch', 'fit', 'crop']), default='stretch')
 @click.option('--interleaved-count', default=31, type=int, help='Number of chunks to send before waiting for a response.')
 @click.option('--retry', default=3, type=int, help='Max number of retry attempts on connection failure.')
-def send(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count, retry):
+def send(address, adapter, image_path, text, font, size, color, bg_color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count, retry):
     if not image_path and not text: raise click.UsageError("Either --image or --text must be provided.")
-    asyncio.run(main_logic(address, adapter, image_path, text, font, size, color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count, retry))
+    asyncio.run(main_logic(address, adapter, image_path, text, font, size, color, bg_color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count, retry))
 
 if __name__ == '__main__':
     cli()
