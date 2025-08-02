@@ -17,7 +17,7 @@ This project uses a `requirements.txt` file and can be run with `uv`.
     uv venv
     uv pip sync -r requirements.txt
     ```
-    This will create a `.venv` directory and install the required packages.
+    This will create a `.venv` directory and install the required packages, including `numpy`.
 
 ## Usage
 
@@ -39,12 +39,17 @@ python epd_ble_sender/main.py scan --adapter hci0
 
 For a standard black and white screen:
 ```bash
-python epd_ble_sender/main.py send --address <YOUR_DEVICE_ADDRESS> --adapter hci0 --image /path/to/your/image.png
+python epd_ble_sender/main.py send --address <YOUR_DEVICE_ADDRESS> --adapter hci0 --image /path/to/your/image.png --color-mode bw
 ```
 
-For a **black/white/red** three-color screen, use the `--color-mode bwr` option:
+For a **black/white/red** three-color screen, use the `--color-mode bwr` option. The script uses Floyd-Steinberg dithering by default.
 ```bash
 python epd_ble_sender/main.py send --address <YOUR_DEVICE_ADDRESS> --adapter hci0 --image /path/to/your/image.png --color-mode bwr
+```
+
+To send without dithering:
+```bash
+python epd_ble_sender/main.py send --address <YOUR_DEVICE_ADDRESS> --adapter hci0 --image /path/to/your/image.png --color-mode bwr --dither none
 ```
 
 ### Send Text
@@ -66,3 +71,4 @@ python epd_ble_sender/main.py send --address <YOUR_DEVICE_ADDRESS> --adapter hci
 *   `--height`: The height of the EPD screen in pixels.
 *   `--clear`: A flag to clear the screen before sending new content.
 *   `--color-mode`: `bw` for black/white, `bwr` for black/white/red.
+*   `--dither`: Dithering algorithm to use. `floyd` (default) or `none`.
