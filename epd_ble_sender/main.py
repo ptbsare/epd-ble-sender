@@ -261,9 +261,11 @@ async def main_logic(address, adapter, image_path, text, font, size, color, widt
     finally:
         if client.is_connected:
             await client.stop_notify(CHARACTERISTIC_UUID)
-            await asyncio.sleep(1) # Add a short delay for graceful shutdown
             await client.disconnect()
-            logger.info("Disconnected.")
+            logger.info("Disconnected. Waiting for graceful shutdown...")
+            await asyncio.sleep(2) # Give time for BLE stack to clean up
+            logger.info("Shutdown complete.")
+
 
 # --- CLI Definition ---
 
