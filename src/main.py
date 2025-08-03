@@ -7,6 +7,7 @@ import logging
 import sys
 import numpy as np
 import re
+import time
 
 # Constants
 SERVICE_UUID = "62750001-d828-918d-fb46-b6c11c675aec"
@@ -23,6 +24,7 @@ TWO_COLOR_PALETTE = np.array([[0, 0, 0], [255, 255, 255]])
 
 class EpdCmd:
     INIT = 0x01; CLEAR = 0x02; REFRESH = 0x05; WRITE_IMG = 0x30;
+    SET_TIME = 0x20;
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stdout)
 logger = logging.getLogger(__name__)
@@ -211,7 +213,30 @@ def render_text_to_image(text_content, width, height, default_font_path, default
 
     return image
 
-async def main_logic(address, adapter, image_path, text, font, size, color, bg_color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count, retry):
+async def main_logic(address, adapter, image_path=None, text=None, font=None, size=None, color=None, bg_color=None, width=None, height=None, clear=False, color_mode='bw', dither_algo='auto', resize_mode='stretch', interleaved_count=31, retry=3, command_to_run=None, mode_byte=None):
+    if command_to_run:
+        client = BleakClient(address, adapter=adapter)
+        try:
+            logger.info(f"Connecting to {address} to send a simple command...")
+            await client.connect()
+            if command_to_run == 'set_time':
+                logger.info(f"Sending Set Time command (mode: {mode_byte})...")
+                timestamp = int(time.time())
+                tz_offset = -time.timezone // 3600
+                data = bytearray()
+                data.extend(timestamp.to_bytes(4, 'big'))
+                data.append(tz_offset)
+                data.append(mode_byte)
+                await send_command(client, EpdCmd.SET_TIME, data)
+                logger.info("Time sync command sent successfully.")
+            await asyncio.sleep(1) # Give time for command to process
+        except Exception as e:
+            logger.error(f"Failed to send command: {e}", exc_info=True)
+        finally:
+            if client.is_connected:
+                await client.disconnect()
+        return
+
     # Pre-calculate image to avoid re-calculating on retry
     if image_path:
         logger.info(f"Opening image: {image_path}")
@@ -351,7 +376,22 @@ def cli(): pass
 @cli.command()
 @click.option('--adapter', help='Bluetooth adapter to use, e.g., hci0')
 def scan(adapter):
+    """Scan for BLE devices."""
     asyncio.run(BleakScanner.discover(adapter=adapter))
+
+@cli.command()
+@click.option('--address', required=True)
+@click.option('--adapter')
+def calendar(address, adapter):
+    """Switch the device to calendar mode."""
+    asyncio.run(main_logic(address, adapter, command_to_run='set_time', mode_byte=1))
+
+@cli.command()
+@click.option('--address', required=True)
+@click.option('--adapter')
+def clock(address, adapter):
+    """Switch the device to clock mode."""
+    asyncio.run(main_logic(address, adapter, command_to_run='set_time', mode_byte=2))
 
 @cli.command()
 @click.option('--address', required=True)
@@ -371,6 +411,7 @@ def scan(adapter):
 @click.option('--interleaved-count', default=31, type=int, help='Number of chunks to send before waiting for a response.')
 @click.option('--retry', default=3, type=int, help='Max number of retry attempts on connection failure.')
 def send(address, adapter, image_path, text, font, size, color, bg_color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count, retry):
+    """Send an image or text to the device."""
     if not image_path and not text: raise click.UsageError("Either --image or --text must be provided.")
     asyncio.run(main_logic(address, adapter, image_path, text, font, size, color, bg_color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count, retry))
 

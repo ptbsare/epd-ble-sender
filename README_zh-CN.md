@@ -9,6 +9,7 @@
     - 使用简单的标记语言，可以精确控制每一行文本的 **字体大小**、**对齐方式**（左/中/右）和 **字体**。
     - 可将文本颜色设置为 **黑**、**红**、**白**。
     - 可将图像背景色设置为 **白**、**黑**、**红**。
+- **设备模式控制**: 使用简单命令即可在 **日历模式** 和 **时钟模式** 之间切换。
 - **智能设备发现**: 自动扫描并连接到指定的BLE设备，并能通过设备通知自动检测屏幕 **分辨率** 和 **MTU** 大小。
 - **丰富的图像处理**:
     - **多种抖动算法**: 内置 `Floyd-Steinberg`, `Atkinson`, `Jarvis-Stucki`, `Stucki`, 和 `Bayer` 算法，以优化在黑白或三色屏幕上的图像显示效果。
@@ -79,6 +80,20 @@ uv run src/main.py send --address XX:XX:XX:XX:XX:XX \
 --bg-color black
 ```
 
+### 3. 切换显示模式
+
+你可以切换设备内置的显示模式，在日历和时钟之间选择。
+
+**切换到日历模式:**
+```bash
+uv run src/main.py calendar --address XX:XX:XX:XX:XX:XX
+```
+
+**切换到时钟模式:**
+```bash
+uv run src/main.py clock --address XX:XX:XX:XX:XX:XX
+```
+
 ## 📚 命令行选项参考
 
 ### `scan` 命令
@@ -100,6 +115,14 @@ uv run src/main.py send --address XX:XX:XX:XX:XX:XX \
 - `--resize-mode [stretch|fit|crop]`: 图像缩放模式。
 - `--interleaved-count INTEGER`: 发送多少个数据块后等待一次设备响应。
 - `--retry INTEGER`: 连接失败时的最大重试次数。
+
+### `calendar` 命令
+- `--address TEXT`: **(必需)** 目标设备的BLE地址。
+- `--adapter TEXT`: 指定要使用的蓝牙适配器 (例如 `hci0`)。
+
+### `clock` 命令
+- `--address TEXT`: **(必需)** 目标设备的BLE地址。
+- `--adapter TEXT`: 指定要使用的蓝牙适配器 (例如 `hci0`)。
 
 ## 📦 打包为可执行文件
 

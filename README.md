@@ -11,6 +11,7 @@ A powerful command-line tool to send images and text to various E-Paper Displays
     - Use a simple markup language to precisely control the **font size**, **alignment** (left/center/right), and **font** for each line of text.
     - Set text color to **black**, **red**, or **white**.
     - Set the image background color to **white**, **black**, or **red**.
+- **Device Mode Control**: Switch the display between **Calendar Mode** and **Clock Mode** with simple commands.
 - **Smart Device Discovery**: Automatically scans for and connects to specified BLE devices, and can auto-detect screen **resolution** and **MTU size** via device notifications.
 - **Rich Image Processing**:
     - **Multiple Dithering Algorithms**: Built-in support for `Floyd-Steinberg`, `Atkinson`, `Jarvis-Stucki`, `Stucki`, and `Bayer` algorithms to optimize image display on monochrome or tri-color screens.
@@ -73,12 +74,18 @@ uv run src/main.py send --address XX:XX:XX:XX:XX:XX \
 --color-mode bwr
 ```
 
-**Send text with custom background and text colors:**
+### 3. Switch Display Mode
+
+You can switch the device's built-in display mode between a calendar and a clock.
+
+**Switch to Calendar Mode:**
 ```bash
-# This command creates an image with a black background and white text
-uv run src/main.py send --address XX:XX:XX:XX:XX:XX \
---text "[size=30,color=white,align=center]Night Mode" \
---bg-color black
+uv run src/main.py calendar --address XX:XX:XX:XX:XX:XX
+```
+
+**Switch to Clock Mode:**
+```bash
+uv run src/main.py clock --address XX:XX:XX:XX:XX:XX
 ```
 
 ## 📚 Command-Line Options Reference
