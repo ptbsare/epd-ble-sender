@@ -230,9 +230,15 @@ async def main_logic(address, adapter, image_path=None, text=None, font=None, si
                 await send_command(client, EpdCmd.SET_TIME, data)
                 logger.info("Time sync command sent successfully.")
             elif command_to_run == 'clear_screen':
+                logger.info("Sending Init command...")
+                await send_command(client, EpdCmd.INIT)
+                await asyncio.sleep(0.5)
                 logger.info("Sending Clear Screen command...")
                 await send_command(client, EpdCmd.CLEAR)
-                logger.info("Clear screen command sent successfully.")
+                await asyncio.sleep(1)
+                logger.info("Sending Refresh command...")
+                await send_command(client, EpdCmd.REFRESH)
+                logger.info("Clear screen sequence sent successfully.")
             await asyncio.sleep(1) # Give time for command to process
         except Exception as e:
             logger.error(f"Failed to send command: {e}", exc_info=True)
