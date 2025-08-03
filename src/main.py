@@ -367,6 +367,7 @@ async def main_logic(address, adapter, image_path=None, text=None, font=None, si
                 await client.stop_notify(CHARACTERISTIC_UUID)
                 await client.disconnect()
                 logger.info("Disconnected.")
+                await asyncio.sleep(3) # Allow event loop to process disconnection events
 
 # --- CLI Definition ---
 
