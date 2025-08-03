@@ -81,6 +81,15 @@ uv run src/main.py send --address XX:XX:XX:XX:XX:XX \
 --text "[size=30,color=white,align=center]Night Mode" \
 --bg-color black
 ```
+**Save the final image locally:**
+```bash
+# This command processes the image and saves the dithered result to output.png before sending
+uv run src/main.py send --address XX:XX:XX:XX:XX:XX \
+--image /path/to/your/image.png \
+--dither floyd \
+--save ./output.png
+```
+
 
 ### 3. Switch Display Mode
 
@@ -105,7 +114,38 @@ uv run src/main.py clear --address XX:XX:XX:XX:XX:XX
 
 ## 📚 Command-Line Options Reference
 
-(For a full list of commands and options, please refer to the [Chinese README](README_zh-CN.md).)
+### `scan` command
+- `--adapter TEXT`: Specify the Bluetooth adapter to use (e.g., `hci0`).
+
+### `send` command
+- `--address TEXT`: **(Required)** The BLE address of the target device.
+- `--image TEXT`: Path to the image file to send.
+- `--text TEXT`: Text content to render and send. Supports `\n` for newlines.
+- `--font TEXT`: Path to the default font file.
+- `--size INTEGER`: Default font size.
+- `--color TEXT`: Default text color (`black`, `red`, or `white`).
+- `--bg-color [white|black|red]`: Set the background color for text rendering (default: `white`).
+- `--width INTEGER`: Manually specify the screen width.
+- `--height INTEGER`: Manually specify the screen height.
+- `--clear`: Clear the screen before sending.
+- `--color-mode [bw|bwr]`: Color mode. `bw` for black and white, `bwr` for black, white, and red.
+- `--dither [auto|none|floyd|atkinson|jarvis|stucki|bayer]`: Dithering algorithm to use. In 'auto' mode, dithering is enabled for images and disabled for text.
+- `--resize-mode [stretch|fit|crop]`: Image resize mode.
+- `--interleaved-count INTEGER`: Number of data chunks to send before waiting for a response from the device.
+- `--retry INTEGER`: Maximum number of retry attempts on connection failure.
+- `--save TEXT`: Save the final processed (dithered) image to the specified path.
+
+### `calendar` command
+- `--address TEXT`: **(Required)** The BLE address of the target device.
+- `--adapter TEXT`: Specify the Bluetooth adapter to use (e.g., `hci0`).
+
+### `clock` command
+- `--address TEXT`: **(Required)** The BLE address of the target device.
+- `--adapter TEXT`: Specify the Bluetooth adapter to use (e.g., `hci0`).
+
+### `clear` command
+- `--address TEXT`: **(Required)** The BLE address of the target device.
+- `--adapter TEXT`: Specify the Bluetooth adapter to use (e.g., `hci0`).
 
 ## 📦 Packaging as an Executable
 

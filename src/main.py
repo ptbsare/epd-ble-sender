@@ -213,7 +213,7 @@ def render_text_to_image(text_content, width, height, default_font_path, default
 
     return image
 
-async def main_logic(address, adapter, image_path=None, text=None, font=None, size=None, color=None, bg_color=None, width=None, height=None, clear=False, color_mode='bw', dither_algo='auto', resize_mode='stretch', interleaved_count=31, retry=3, command_to_run=None, mode_byte=None):
+async def main_logic(address, adapter, image_path=None, text=None, font=None, size=None, color=None, bg_color=None, width=None, height=None, clear=False, color_mode='bw', dither_algo='auto', resize_mode='stretch', interleaved_count=31, retry=3, command_to_run=None, mode_byte=None, save_path=None):
     if command_to_run:
         client = BleakClient(address, adapter=adapter)
         try:
@@ -342,6 +342,15 @@ async def main_logic(address, adapter, image_path=None, text=None, font=None, si
                 dither_func = bayer_dither if final_dither_algo == 'bayer' else dither
                 img = dither_func(img, palette, final_dither_algo) if final_dither_algo != 'bayer' else dither_func(img, palette)
 
+            if save_path:
+                try:
+                    logger.info(f"Saving final image to {save_path}")
+                    img.save(save_path)
+                except IOError as e:
+                    logger.error(f"Failed to save image to {save_path}: {e}")
+                    # We can decide to either exit or just continue without saving
+                    # For now, we'll just log the error and continue.
+
             # --- Data Transfer ---
             if clear:
                 await send_command(client, EpdCmd.CLEAR); await asyncio.sleep(2)
@@ -428,10 +437,11 @@ def clear(address, adapter):
 @click.option('--resize-mode', type=click.Choice(['stretch', 'fit', 'crop']), default='stretch')
 @click.option('--interleaved-count', default=31, type=int, help='Number of chunks to send before waiting for a response.')
 @click.option('--retry', default=3, type=int, help='Max number of retry attempts on connection failure.')
-def send(address, adapter, image_path, text, font, size, color, bg_color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count, retry):
+@click.option('--save', 'save_path', type=click.Path(), help='Save the final dithered image to the specified path.')
+def send(address, adapter, image_path, text, font, size, color, bg_color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count, retry, save_path):
     """Send an image or text to the device."""
     if not image_path and not text: raise click.UsageError("Either --image or --text must be provided.")
-    asyncio.run(main_logic(address, adapter, image_path, text, font, size, color, bg_color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count, retry))
+    asyncio.run(main_logic(address, adapter, image_path, text, font, size, color, bg_color, width, height, clear, color_mode, dither_algo, resize_mode, interleaved_count, retry, save_path=save_path))
 
 if __name__ == '__main__':
     cli()

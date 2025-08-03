@@ -80,6 +80,15 @@ uv run src/main.py send --address XX:XX:XX:XX:XX:XX \
 --bg-color black
 ```
 
+**将最终图像保存到本地:**
+```bash
+# 此命令会处理图像，并在发送前将抖动后的结果保存到 output.png
+uv run src/main.py send --address XX:XX:XX:XX:XX:XX \
+--image /path/to/your/image.png \
+--dither floyd \
+--save ./output.png
+```
+
 ### 3. 切换显示模式
 
 你可以切换设备内置的显示模式，在日历和时钟之间选择。
@@ -122,6 +131,7 @@ uv run src/main.py clear --address XX:XX:XX:XX:XX:XX
 - `--resize-mode [stretch|fit|crop]`: 图像缩放模式。
 - `--interleaved-count INTEGER`: 发送多少个数据块后等待一次设备响应。
 - `--retry INTEGER`: 连接失败时的最大重试次数。
+- `--save TEXT`: 将最终处理（抖动后）的图像保存到指定路径。
 
 ### `calendar` 命令
 - `--address TEXT`: **(必需)** 目标设备的BLE地址。
