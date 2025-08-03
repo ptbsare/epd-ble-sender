@@ -229,6 +229,10 @@ async def main_logic(address, adapter, image_path=None, text=None, font=None, si
                 data.append(mode_byte)
                 await send_command(client, EpdCmd.SET_TIME, data)
                 logger.info("Time sync command sent successfully.")
+            elif command_to_run == 'clear_screen':
+                logger.info("Sending Clear Screen command...")
+                await send_command(client, EpdCmd.CLEAR)
+                logger.info("Clear screen command sent successfully.")
             await asyncio.sleep(1) # Give time for command to process
         except Exception as e:
             logger.error(f"Failed to send command: {e}", exc_info=True)
@@ -393,6 +397,13 @@ def calendar(address, adapter):
 def clock(address, adapter):
     """Switch the device to clock mode."""
     asyncio.run(main_logic(address, adapter, command_to_run='set_time', mode_byte=2))
+
+@cli.command()
+@click.option('--address', required=True)
+@click.option('--adapter')
+def clear(address, adapter):
+    """Clear the device screen."""
+    asyncio.run(main_logic(address, adapter, command_to_run='clear_screen'))
 
 @cli.command()
 @click.option('--address', required=True)
